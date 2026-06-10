@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: sifap-backend
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/sifap}
+    username: ${SPRING_DATASOURCE_USERNAME:sifap}
+    password: ${SPRING_DATASOURCE_PASSWORD:sifap}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        default_schema: beneficiary
+  flyway:
+    enabled: true
+    schemas: beneficiary
+    default-schema: beneficiary
+    create-schemas: true
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
