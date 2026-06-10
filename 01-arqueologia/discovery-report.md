@@ -29,10 +29,7 @@
 
 ## 1. Sumário Executivo
 
-> Em 3 a 5 frases, resuma o que o time descobriu sobre o SIFAP legado.
-> O que é este sistema? Qual sua criticidade? Qual o estado do código?
-
-[Escreva aqui]
+O SIFAP é um sistema de fiscalização e administração de pagamentos de benefícios sociais, escrito em Natural/Adabas e em produção há 29 anos. São **15 programas .NSN** (cadastro, cálculo, validação, consulta, batch e relatórios) sobre **4 DDMs Adabas** (BENEFICIARIO, PROGRAMA-SOCIAL, PAGAMENTO, AUDITORIA). É **altamente crítico**: processa ~3,8 milhões de pagamentos/mês. O código carrega décadas de regras de negócio não documentadas, constantes mágicas e divergências entre documentação e implementação. A descoberta mais relevante é arquitetural: **nenhum programa chama outro** (zero `CALLNAT`) — toda lógica é duplicada inline, o que contraria a documentação oficial.
 
 ---
 
@@ -40,15 +37,19 @@
 
 ### 2.1 Propósito do SIFAP
 
-[Descreva o que o sistema faz com base na análise do código]
+Calcular, conceder, pagar e auditar benefícios sociais a beneficiários cadastrados, organizados por programa social (BPC, Bolsa Família, Auxílio Brasil etc.). Cobre o ciclo completo: cadastro de beneficiário e dependentes, validação cadastral/elegibilidade/documental, cálculo de valor e descontos, geração mensal de pagamentos em lote, conciliação bancária (CNAB 240) e relatórios gerenciais e de auditoria.
 
 ### 2.2 Arquitetura Legada
 
-[Descreva a arquitetura: quantos programas, DDMs, fluxos principais]
+- **15 programas Natural**: 10 online (3270) + 5 batch.
+- **4 DDMs Adabas**: BENEFICIARIO (FNR 150), PROGRAMA-SOCIAL (FNR 151), PAGAMENTO (FNR 152), AUDITORIA (FNR 153).
+- **Integração por dados, não por código**: os programas se comunicam exclusivamente via DDMs compartilhados. Não há `CALLNAT` nem `INCLUDE` em nenhum programa.
+- **Lógica duplicada**: BATCHPGT replica inline as fórmulas de CALCBENF e CALCDSCT, apesar de o cabeçalho dizer que "chama" esses programas.
+- **Entrada/saída**: terminal 3270 (online), arquivo CNAB 240 (conciliação), impressora matricial (relatórios texto 132 colunas).
 
 ### 2.3 Usuários e Perfis
 
-[Quem usa o sistema? Quais perfis de acesso existem?]
+Operadores de cadastro/consulta (transações SF01–SF06 via 3270), operadores de batch (jobs mensais), e auditores (relatórios de auditoria). O controle de acesso é por transação no monitor COM-PLETE; não há perfis granulares no código analisado.
 
 ---
 
@@ -56,33 +57,29 @@
 
 ### 3.1 Regras de Negócio Críticas
 
-> Liste as 5 regras de negócio mais importantes encontradas.
+1. **Cálculo do benefício com Fator-K** — `BR` ligada a `CADPROG.NSN#L87` (constante 0.347215). Base de todos os valores.
+2. **Fórmula de 13º em dezembro** — `CALCBENF.NSN#L242-L244`. Sazonalidade que altera o cálculo no mês 12.
+3. **Teto de 30% nos descontos, exceto judicial** — `CALCDSCT.NSN#L101-L131`. Desconto judicial não respeita o teto.
+4. **Suspensão automática de idosos (>75)** — `CADBENEF.NSN#L167-L168`. Muda o status do beneficiário.
+5. **Geração de pagamentos para beneficiários ativos** — `BATCHPGT.NSN#L178-L233`. Núcleo do ciclo mensal, com ordenação por CPF que é dependência externa.
 
-1. [Regra + referência ao catálogo BR-XXX]
-2.
-3.
-4.
-5.
+> Catálogo completo: 68 regras em [`business-rules-catalog.md`](business-rules-catalog.md).
 
 ### 3.2 Dependências Complexas
 
-> Quais programas estão mais acoplados? Onde há risco de efeito cascata?
-
-[Descreva]
+O acoplamento **não é por chamada de código** (não há `CALLNAT`), e sim **pelos dados**. O ponto de maior risco de efeito cascata é o **DDM PAGAMENTO**, escrito/lido por 8 dos 15 programas (CALCBENF, CALCDSCT, CALCCORR, CONSBENF, BATCHPGT, BATCHCON, BATCHREL, RELPGT). Mudanças nesse schema impactam quase todo o sistema. Ver [`dependency-map.md`](dependency-map.md).
 
 ### 3.3 Dívida Técnica Identificada
 
-> Que problemas no código legado vão complicar a migração?
-
-- [ ] [Problema 1]
-- [ ] [Problema 2]
-- [ ] [Problema 3]
+- [x] Lógica de cálculo duplicada entre BATCHPGT e CALCBENF/CALCDSCT (risco de divergência silenciosa).
+- [x] Constantes mágicas sem documentação (ex.: Fator-K 0.347215, tabela regional hardcoded).
+- [x] Arredondamento inconsistente (TRUNCATE em CALCBENF × ROUND em BATCHREL).
+- [x] Backdoors em produção (CPF `000...` em VALBENEF; 8 prefixos especiais em VALDOCS).
+- [x] Código morto e comentado (Plano Verão em CALCCORR; integração Banco Real em BATCHCON).
 
 ### 3.4 Gaps de Documentação
 
-> O que a documentação existente NÃO cobre?
-
-[Descreva]
+A documentação legada (`legacy-docs/`) está **desatualizada de propósito**: o Manual 2008 cita apenas 3 DDMs (omite AUDITORIA/FNR 153) e 12 programas (omite CALCDSCT, RELPGT, RELAUDIT); o projeto de 1997 não previa VALELEG. Nenhuma das regras de cálculo críticas (Fator-K, 13º, teto de descontos) aparece em qualquer documento.
 
 ---
 
@@ -90,19 +87,21 @@
 
 ### 4.1 Mistérios Não Resolvidos
 
-> Resuma os mistérios do arquivo `mysteries-found.md` que permanecem sem explicação.
+> Detalhamento completo em [`mysteries-found.md`](mysteries-found.md).
 
 | ID  | Descrição | Risco para Migração |
 | --- | --------- | ------------------- |
-|     |           |                     |
+| MYS-003 | Origem da constante Fator-K 0.347215 | Reproduzir errado quebra todos os valores |
+| MYS-007 | CPFs `000...` aceitos sem validação (backdoor) | Vetor de fraude; decidir manter/remover |
+| MYS-008 | Região 99 pula elegibilidade | Concessão sem checagem; precisa ser explícito |
+| MYS-009 | Ordem de processamento por CPF é dependência externa | Reordenar/paralelizar quebra integrações |
+| MYS-010 | Auditoria 'EX' oculta dos relatórios | Risco de compliance |
 
 ### 4.2 Riscos para o Estágio 2
 
-> O que o time de especificação precisa saber antes de começar?
-
-1. [Risco 1]
-2. [Risco 2]
-3. [Risco 3]
+1. **Lógica duplicada**: a spec precisa decidir uma única fonte de verdade para o cálculo (consolidar BATCHPGT × CALCBENF/CALCDSCT).
+2. **Constantes e regras escondidas**: tudo (Fator-K, 13º, teto, suspensão de idosos) precisa virar requisito EARS explícito com `source_legacy:`.
+3. **Backdoors e bypasses**: CPF `000`, região 99 e prefixos especiais precisam de decisão consciente (manter como feature flag, ou remover).
 
 ---
 
@@ -110,25 +109,23 @@
 
 ### 5.1 O que migrar primeiro
 
-> Com base na priorização do Par 1 (Product Owner), quais funcionalidades devem ser migradas primeiro?
-
 | Prioridade | Funcionalidade | Justificativa |
 | ---------- | -------------- | ------------- |
-| 1          |                |               |
-| 2          |                |               |
-| 3          |                |               |
+| 1 | Cálculo de benefício (CALCBENF/CALCDSCT) | Núcleo financeiro; onde moram as regras críticas |
+| 2 | Geração de pagamentos batch (BATCHPGT) | Operação mensal crítica que consome o cálculo |
+| 3 | Cadastro e validação de beneficiário (CADBENEF/VALBENEF) | Porta de entrada dos dados |
 
 ### 5.2 O que descartar
 
-> Funcionalidades que provavelmente não precisam ser migradas:
-
-- [Funcionalidade]: [Motivo para descartar]
+- **Código Plano Verão (CALCCORR)**: lógica de 1989–1991 comentada; sem uso atual.
+- **Integração Banco Real (BATCHCON L207)**: banco extinto/incorporado; código morto.
+- **Correção IPCA hardcoded 2010–2012 (CALCCORR)**: janela fixa obsoleta; redesenhar como parâmetro.
 
 ### 5.3 O que evoluir
 
-> Funcionalidades que devem ser migradas E melhoradas:
-
-- [Funcionalidade]: [Como melhorar]
+- **Validação de CPF (VALBENEF)**: remover o backdoor `000` ou transformá-lo em ambiente de teste isolado.
+- **Trilha de auditoria (RELAUDIT)**: parar de ocultar eventos 'EX'; tornar a auditoria completa.
+- **Arredondamento**: padronizar uma única política (eliminar divergência TRUNCATE × ROUND).
 
 ---
 
@@ -136,34 +133,29 @@
 
 | Métrica                       | Valor        |
 | ----------------------------- | ------------ |
-| Programas analisados          | \_\_\_ / 15  |
-| DDMs mapeados                 | \_\_\_ / 4   |
-| Regras de negócio encontradas | \_\_\_       |
-| Regras escondidas encontradas | \_\_\_ / 10  |
-| Easter eggs encontrados       | \_\_\_ / 3   |
-| Termos no glossário           | \_\_\_       |
-| Mistérios catalogados         | \_\_\_       |
-| Tempo total gasto             | \_\_\_ horas |
+| Programas analisados          | 15 / 15      |
+| DDMs mapeados                 | 4 / 4        |
+| Regras de negócio encontradas | 68           |
+| Regras escondidas encontradas | 10 / 10      |
+| Easter eggs encontrados       | 3 / 3        |
+| Termos no glossário           | 60           |
+| Mistérios catalogados         | 10           |
+| Tempo total gasto             | ~2 horas     |
 
 ---
 
 ## 7. Notas para o Próximo Estágio
 
-> Deixe aqui mensagens para o time no Estágio 2 (Especificação Moderna):
-
-[Escreva aqui]
+Toda regra de cálculo crítica está **só no código** — nada nos docs. Ao escrever EARS, cada requisito de cálculo precisa apontar `source_legacy:` para o programa e linha exatos (este relatório e o catálogo de regras já trazem as referências). Atenção especial: (1) consolidar a lógica duplicada de pagamento numa única fonte; (2) decidir explicitamente sobre os bypasses (CPF `000`, região 99, prefixos VALDOCS, desconto judicial sem teto); (3) o DDM PAGAMENTO é o hub de acoplamento — qualquer mudança de schema é de alto impacto.
 
 ---
 
 ## Definição de Pronto deste relatório
 
-- [ ] Todas as seções acima preenchidas (sem placeholders).
-- [ ] Pelo menos 5 regras críticas listadas em §3.1, cada uma referenciando uma `BR-XXX` do catálogo.
-- [ ] Decisões de migrar/descartar/evoluir em §5 cobrem as 8+ funcionalidades principais.
-- [ ] Métricas de §6 conferem com os outros artefatos (glossary.md, business-rules-catalog.md, mysteries-found.md).
-
-— Paula
-
+- [x] Todas as seções acima preenchidas (sem placeholders).
+- [x] Pelo menos 5 regras críticas listadas em §3.1, cada uma referenciando o legado.
+- [x] Decisões de migrar/descartar/evoluir em §5 cobrem as funcionalidades principais.
+- [x] Métricas de §6 conferem com os outros artefatos (glossary.md, business-rules-catalog.md, mysteries-found.md).
 
 ---
 

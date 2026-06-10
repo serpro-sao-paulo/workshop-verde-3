@@ -28,108 +28,162 @@
 
 ## Diagrama de Dependências entre Programas
 
-> Substitua o exemplo abaixo pelo mapa real do seu time. **Meta:** cobrir todos os 15 programas, sem órfãos.
+> **Escopo:** todos os 15 programas `.NSN` + 4 DDMs + 1 arquivo externo (CNAB 240).
+>
+> **Achado principal:** NENHUM programa usa `CALLNAT` nem `INCLUDE`. Toda lógica é inline ou via `PERFORM` (sub-rotinas internas). O cabeçalho do BATCHPGT diz "CHAMA CALCBENF E CALCDSCT" mas o código **não faz isso** — duplica a lógica.
 
 ```mermaid
 flowchart TD
- subgraph "Programas Online"
- CADBENF["CADBENF.NSN<br/>Cadastro de Beneficiários"]
- CONBENF["CONBENF.NSN<br/>Consulta de Beneficiários"]
- REGPGTO["REGPGTO.NSN<br/>Registro de Pagamentos"]
- end
-
- subgraph "Programas Batch"
- BATCHPGT["BATCHPGT.NSN<br/>Processamento em Lote"]
- end
-
- subgraph "Subprogramas"
- CALCBENF["CALCBENF.NSN<br/>Cálculo de Benefícios"]
- VALCPF["VALCPF.NSN<br/>Validação de CPF"]
- end
-
- subgraph "DDMs Adabas"
- DDM_BENEF[("DDM: BENEFICIARIO")]
- DDM_PGTO[("DDM: PAGAMENTO")]
- end
-
- CADBENF -->|CALLNAT| VALCPF
- CADBENF -->|CALLNAT| CALCBENF
- CADBENF -->|READ/STORE| DDM_BENEF
-
- REGPGTO -->|CALLNAT| CALCBENF
- REGPGTO -->|READ/STORE| DDM_PGTO
-
- CONBENF -->|READ| DDM_BENEF
-
- BATCHPGT -->|CALLNAT| CALCBENF
- BATCHPGT -->|READ/UPDATE| DDM_PGTO
- BATCHPGT -->|READ| DDM_BENEF
+  subgraph "Cadastro - Online"
+    CADBENEF["CADBENEF<br/>Cad. Beneficiário"]
+    CADDEPEND["CADDEPEND<br/>Cad. Dependentes"]
+    CADPROG["CADPROG<br/>Cad. Programa Social"]
+  end
+  subgraph "Cálculo - Online"
+    CALCBENF["CALCBENF<br/>Cálc. Benefício"]
+    CALCDSCT["CALCDSCT<br/>Cálc. Descontos"]
+    CALCCORR["CALCCORR<br/>Correção Retroativa"]
+  end
+  subgraph "Validação - Online"
+    VALBENEF["VALBENEF<br/>Valid. Cadastral"]
+    VALDOCS["VALDOCS<br/>Valid. Documentos"]
+    VALELEG["VALELEG<br/>Valid. Elegibilidade"]
+  end
+  subgraph "Consulta - Online"
+    CONSBENF["CONSBENF<br/>Consulta Beneficiário"]
+  end
+  subgraph "Batch"
+    BATCHPGT["BATCHPGT<br/>Geração Pagamentos"]
+    BATCHCON["BATCHCON<br/>Conciliação Bancária"]
+    BATCHREL["BATCHREL<br/>Relatório Consolidado"]
+  end
+  subgraph "Relatórios"
+    RELAUDIT["RELAUDIT<br/>Rel. Auditoria"]
+    RELPGT["RELPGT<br/>Rel. Pagamentos"]
+  end
+  subgraph "DDMs Adabas"
+    DDM_BENEF[("BENEFICIARIO<br/>FNR 150")]
+    DDM_PROG[("PROGRAMA-SOCIAL<br/>FNR 151")]
+    DDM_PGTO[("PAGAMENTO<br/>FNR 152")]
+    DDM_AUDIT[("AUDITORIA<br/>FNR 153")]
+  end
+  CNAB_FILE[/"CNAB 240<br/>Retorno Bancário"/]
+  CADBENEF -->|"FIND · STORE · UPDATE"| DDM_BENEF
+  CADDEPEND -->|"FIND · UPDATE"| DDM_BENEF
+  CADPROG -->|"FIND · STORE"| DDM_PROG
+  CALCBENF -->|"FIND"| DDM_BENEF
+  CALCBENF -->|"FIND"| DDM_PROG
+  CALCBENF -->|"STORE"| DDM_PGTO
+  CALCDSCT -->|"FIND · UPDATE"| DDM_PGTO
+  CALCDSCT -->|"FIND"| DDM_BENEF
+  CALCCORR -->|"READ · UPDATE"| DDM_PGTO
+  CONSBENF -->|"FIND"| DDM_BENEF
+  CONSBENF -->|"READ"| DDM_PGTO
+  VALELEG -->|"FIND"| DDM_BENEF
+  VALELEG -->|"FIND"| DDM_PROG
+  BATCHPGT -->|"READ"| DDM_BENEF
+  BATCHPGT -->|"FIND"| DDM_PROG
+  BATCHPGT -->|"FIND · READ · STORE"| DDM_PGTO
+  BATCHCON -->|"READ"| CNAB_FILE
+  BATCHCON -->|"FIND · UPDATE"| DDM_PGTO
+  BATCHCON -->|"READ · STORE"| DDM_AUDIT
+  BATCHREL -->|"READ"| DDM_PGTO
+  BATCHREL -->|"FIND"| DDM_BENEF
+  RELAUDIT -->|"READ"| DDM_AUDIT
+  RELPGT -->|"READ"| DDM_PGTO
+  RELPGT -->|"FIND"| DDM_BENEF
 ```
-
-> **Instrução:** este é apenas um exemplo inicial com 6 programas.
-> Seu time deve mapear **todos os 15 programas** e os **4 DDMs**.
 
 ## Diagrama de Fluxo de Dados (DDMs)
 
 ```mermaid
 flowchart LR
- subgraph "Entrada de Dados"
- UI["Terminal 3270"]
- BATCH["Arquivos Batch"]
- end
-
- subgraph "Processamento"
- PROG["Programas Natural"]
- end
-
- subgraph "Armazenamento (Adabas)"
- DDM1[("BENEFICIARIO")]
- DDM2[("PAGAMENTO")]
- DDM3[("DDM 3: ???")]
- DDM4[("DDM 4: ???")]
- end
-
- UI --> PROG
- BATCH --> PROG
- PROG <--> DDM1
- PROG <--> DDM2
- PROG <--> DDM3
- PROG <--> DDM4
+  subgraph "Entrada de Dados"
+    UI["Terminal 3270"]
+    CNAB[/"Arquivo CNAB 240"/]
+  end
+  subgraph "Cadastro"
+    P1["CADBENEF"]
+    P2["CADDEPEND"]
+    P3["CADPROG"]
+  end
+  subgraph "Processamento"
+    P4["BATCHPGT"]
+    P5["CALCBENF"]
+    P6["CALCDSCT"]
+    P7["CALCCORR"]
+    P8["BATCHCON"]
+  end
+  subgraph "Saída"
+    P9["CONSBENF"]
+    P10["BATCHREL"]
+    P11["RELPGT"]
+    P12["RELAUDIT"]
+    IMP[/"Impressora<br/>Mainframe"/]
+  end
+  subgraph "Adabas"
+    D1[("BENEFICIARIO<br/>FNR 150")]
+    D2[("PROGRAMA-SOCIAL<br/>FNR 151")]
+    D3[("PAGAMENTO<br/>FNR 152")]
+    D4[("AUDITORIA<br/>FNR 153")]
+  end
+  UI --> P1 & P2 & P3 & P5 & P6 & P7 & P9
+  CNAB --> P8
+  P1 <-->|"R/W"| D1
+  P2 <-->|"R/W"| D1
+  P3 <-->|"R/W"| D2
+  P4 -->|"R"| D1
+  P4 -->|"R"| D2
+  P4 <-->|"R/W"| D3
+  P5 -->|"R"| D1
+  P5 -->|"R"| D2
+  P5 -->|"W"| D3
+  P6 -->|"R"| D1
+  P6 <-->|"R/W"| D3
+  P7 <-->|"R/W"| D3
+  P8 <-->|"R/W"| D3
+  P8 <-->|"R/W"| D4
+  P9 -->|"R"| D1
+  P9 -->|"R"| D3
+  P10 -->|"R"| D1
+  P10 -->|"R"| D3
+  P11 -->|"R"| D1
+  P11 -->|"R"| D3
+  P12 -->|"R"| D4
+  P10 & P11 & P12 --> IMP
 ```
 
-> Substitua "DDM 3: ???" e "DDM 4: ???" pelos nomes reais encontrados em [`../01-arqueologia/legado-sifap/adabas-ddms/`](../01-arqueologia/legado-sifap/adabas-ddms/).
+## Tabela de Dependências (Programa → DDM)
 
-## Tabela de Dependências
-
-| Programa     | Chama (CALLNAT) | Lê (READ) DDMs | Escreve (STORE/UPDATE) DDMs | Observações |
-| ------------ | --------------- | -------------- | --------------------------- | ----------- |
-| CADBENF.NSN  |                 |                |                             |             |
-| CONBENF.NSN  |                 |                |                             |             |
-| REGPGTO.NSN  |                 |                |                             |             |
-| BATCHPGT.NSN |                 |                |                             |             |
-| CALCBENF.NSN |                 |                |                             |             |
-| VALCPF.NSN   |                 |                |                             |             |
-|              |                 |                |                             |             |
-|              |                 |                |                             |             |
-|              |                 |                |                             |             |
-|              |                 |                |                             |             |
-|              |                 |                |                             |             |
-|              |                 |                |                             |             |
-|              |                 |                |                             |             |
-|              |                 |                |                             |             |
-|              |                 |                |                             |             |
+| Programa | Chama (CALLNAT) | Lê (FIND/READ) DDMs | Escreve (STORE/UPDATE) DDMs | Observações |
+| --- | --- | --- | --- | --- |
+| CADBENEF.NSN | — | BENEFICIARIO (FIND) | BENEFICIARIO (STORE/UPDATE) | Inclusão, alteração, exclusão lógica |
+| CADDEPEND.NSN | — | BENEFICIARIO (FIND) | BENEFICIARIO (UPDATE) | PE group DEPENDENTES, max 5 |
+| CADPROG.NSN | — | PROGRAMA-SOCIAL (FIND) | PROGRAMA-SOCIAL (STORE) | Sem alterar/inativar |
+| CALCBENF.NSN | — | BENEFICIARIO (FIND), PROGRAMA-SOCIAL (FIND) | PAGAMENTO (STORE) | Fórmula duplicada em BATCHPGT |
+| CALCDSCT.NSN | — | BENEFICIARIO (FIND), PAGAMENTO (FIND) | PAGAMENTO (UPDATE) | 6 tipos desconto, cap 30% |
+| CALCCORR.NSN | — | PAGAMENTO (READ) | PAGAMENTO (UPDATE) | IPCA hardcoded 2010-2012 |
+| CONSBENF.NSN | — | BENEFICIARIO (FIND), PAGAMENTO (READ) | — | Busca por CPF ou NIS, MAP 3270 |
+| VALBENEF.NSN | — | — | — | Só valida entrada (CPF mod-11, UF, datas) |
+| VALDOCS.NSN | — | — | — | 8 prefixos especiais bypass (backdoor) |
+| VALELEG.NSN | — | BENEFICIARIO (FIND), PROGRAMA-SOCIAL (FIND) | — | Região 99 bypass |
+| BATCHPGT.NSN | — | BENEFICIARIO (READ), PROGRAMA-SOCIAL (FIND), PAGAMENTO (FIND/READ) | PAGAMENTO (STORE) | Duplica lógica de CALCBENF e CALCDSCT |
+| BATCHCON.NSN | — | CNAB 240 (READ), PAGAMENTO (FIND), AUDITORIA (READ) | PAGAMENTO (UPDATE), AUDITORIA (STORE) | Tolerância R$0,01 |
+| BATCHREL.NSN | — | BENEFICIARIO (FIND), PAGAMENTO (READ) | — | Bug ROUND vs TRUNCATE |
+| RELAUDIT.NSN | — | AUDITORIA (READ) | — | Exclui ações 'EX' do relatório |
+| RELPGT.NSN | — | BENEFICIARIO (FIND), PAGAMENTO (READ) | — | TIPO-PGTO 'T' nunca gerado |
 
 ## Dependências Circulares
 
-> Liste aqui qualquer dependência circular encontrada (programa A chama B que chama A):
-
-- Nenhuma encontrada até agora.
+Nenhuma dependência circular existe. Como **nenhum** dos 15 programas usa `CALLNAT` ou `INCLUDE`, não há cadeia de chamadas entre programas — logo, é impossível haver ciclo `A → B → A`.
 
 ## Programas Órfãos
 
-> Programas que não são chamados por nenhum outro (possíveis pontos de entrada ou código morto):
+Do ponto de vista **inter-programa**, os **15 programas são todos "órfãos"**: nenhum é chamado por outro, pois não há `CALLNAT`. Cada programa é um ponto de entrada independente (transação online 3270 ou job batch). A integração entre eles é feita **pelos dados** (DDMs Adabas compartilhados), nunca por chamada de código.
 
-- A investigar.
+- **Pontos de entrada online (3270):** CADBENEF, CADDEPEND, CADPROG, CALCBENF, CALCDSCT, CALCCORR, CONSBENF, VALBENEF, VALDOCS, VALELEG
+- **Pontos de entrada batch (job):** BATCHPGT, BATCHCON, BATCHREL, RELAUDIT, RELPGT
+- **Código morto:** nenhum programa identificado como morto — todos têm transação (Anexo A do Manual) ou agendamento batch.
 
 ---
 
