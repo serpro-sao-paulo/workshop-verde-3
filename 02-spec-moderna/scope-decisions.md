@@ -23,10 +23,10 @@
 > - **Descartar**: não trazer — funcionalidade obsoleta ou desnecessária
 > - **Evoluir**: trazer E melhorar (nova UX, novo fluxo, nova capacidade)
 
-**Time**: [Nome do Time]
-**Data**: 19/05/2026
-**Edição**:
-**Par 1 (Product Owner) responsável**: [Nome]
+**Time**: SIFAP 2.0
+**Data**: 2026-06-10
+**Edição**: Workshop de Modernização
+**Par 1 (Product Owner) responsável**: Par 1
 
 ## Por que isso importa
 
@@ -45,22 +45,24 @@ Pergunte de cada funcionalidade:
 
 ## Decisões por Funcionalidade
 
-| #   | Funcionalidade            | Decisão                      | Justificativa | Regra de Negócio (BR-XXX) | Prioridade           |
-| --- | ------------------------- | ---------------------------- | ------------- | ------------------------- | -------------------- |
-| 1   | Cadastro de Beneficiários | Migrar / Descartar / Evoluir |               |                           | Alta / Média / Baixa |
-| 2   | Consulta de Beneficiários |                              |               |                           |                      |
-| 3   | Registro de Pagamentos    |                              |               |                           |                      |
-| 4   | Processamento Batch       |                              |               |                           |                      |
-| 5   | Cálculo de Benefícios     |                              |               |                           |                      |
-| 6   | Validação de CPF          |                              |               |                           |                      |
-| 7   | Relatórios                |                              |               |                           |                      |
-| 8   | Auditoria                 |                              |               |                           |                      |
-| 9   | Gestão de Usuários        |                              |               |                           |                      |
-| 10  |                           |                              |               |                           |                      |
-| 11  |                           |                              |               |                           |                      |
-| 12  |                           |                              |               |                           |                      |
-
-> Adicione linhas para cada funcionalidade identificada no `discovery-report.md` do Estágio 1.
+| #   | Funcionalidade | Decisão | Justificativa | Regra de Negócio (BR-XXX) | Prioridade |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Cadastro de Beneficiários | **Migrar** | Porta de entrada dos dados; afeta o ciclo de pagamento | BR-019…BR-031 | Alta |
+| 2 | Cadastro de Dependentes | **Evoluir** | Limite de 5 hardcoded vira parâmetro configurável | BR-032…BR-035 | Média |
+| 3 | Cadastro de Programa Social | **Migrar** | Parâmetros (valor-base, Fator-K) essenciais ao cálculo | BR-036…BR-039 | Alta |
+| 4 | Cálculo de Benefícios | **Migrar** | Núcleo financeiro; regras críticas | BR-006…BR-013 | Alta |
+| 5 | Cálculo de Descontos | **Migrar** | Teto 30% e desconto judicial são regras legais | BR-040…BR-043 | Alta |
+| 6 | Correção Retroativa (IPCA) | **Evoluir** | Janela IPCA hardcoded 2010-2012 vira parâmetro | BR-044, BR-045 | Baixa |
+| 7 | Geração de Pagamentos (Batch) | **Migrar** | Ciclo mensal crítico; opera a folha | BR-001…BR-016 | Alta |
+| 8 | Conciliação Bancária (CNAB 240) | **Migrar** | Fecha o ciclo financeiro; regulatório | BR-060…BR-062 | Alta |
+| 9 | Validação Cadastral (CPF/nome/data) | **Evoluir** | Remover backdoor CPF 000 (MYS-007) | BR-020, BR-050…BR-053 | Alta |
+| 10 | Validação de Documentos | **Evoluir** | Remover backdoor de prefixos especiais (EGG-002) | BR-054, BR-055 | Média |
+| 11 | Validação de Elegibilidade | **Migrar** | Cruzamento beneficiário × programa; região 99 explícita | BR-056…BR-059 | Alta |
+| 12 | Consulta de Beneficiário | **Migrar** | Corrigir bug de máscara de CPF (BR-049) | BR-047…BR-049 | Média |
+| 13 | Relatório de Pagamentos | **Migrar** | Relatório regulatório (TCU) | BR-063…BR-065, BR-068 | Média |
+| 14 | Relatório/Trilha de Auditoria | **Evoluir** | Parar de ocultar exclusões 'EX' (MYS-010) | BR-066, BR-067 | Alta |
+| 15 | Correção Plano Verão (1989-1991) | **Descartar** | Código morto comentado; sem uso atual (EGG-001) | BR-046 | Baixa |
+| 16 | Integração Banco Real | **Descartar** | Banco extinto/incorporado; código morto (EGG-003) | — | Baixa |
 
 ---
 
@@ -69,10 +71,10 @@ Pergunte de cada funcionalidade:
 > Liste funcionalidades que o SIFAP 2.0 deveria ter e que não existem no sistema legado. Cada uma vira REQ-ID com `source_legacy: [GREENFIELD] <justificativa>`.
 
 | #   | Funcionalidade Nova | Justificativa | Prioridade | Complexidade |
-| --- | ------------------- | ------------- | ---------- | ------------ |
-| N1  |                     |               |            |              |
-| N2  |                     |               |            |              |
-| N3  |                     |               |            |              |
+| --- | --- | --- | --- | --- |
+| N1 | Autenticação Gov.br (OIDC) + RBAC | Legado usava controle por transação 3270; SSO governamental (ADR-003) | Alta | Média |
+| N2 | Trilha de auditoria imutável (sem UPDATE/DELETE) | Compliance TCU/CGU; legado não protege contra remoção (REQ-AUD-001) | Alta | Baixa |
+| N3 | Mascaramento de CPF em logs (LGPD) | LGPD Art. 6º minimização; sem equivalente no legado (REQ-AUD-004) | Alta | Baixa |
 
 ---
 
@@ -80,23 +82,26 @@ Pergunte de cada funcionalidade:
 
 | Decisão   | Quantidade | Percentual |
 | --------- | ---------- | ---------- |
-| Migrar    |            |            |
-| Descartar |            |            |
-| Evoluir   |            |            |
-| **Total** |            | 100%       |
+| Migrar    | 9          | 56%        |
+| Descartar | 2          | 13%        |
+| Evoluir   | 5          | 31%        |
+| **Total** | 16         | 100%       |
 
 ## Riscos de Escopo
 
 > Liste os riscos das decisões tomadas:
 
-| Risco | Probabilidade        | Impacto              | Mitigação |
-| ----- | -------------------- | -------------------- | --------- |
-|       | Alta / Média / Baixa | Alto / Médio / Baixo |           |
+| Risco | Probabilidade | Impacto | Mitigação |
+| --- | --- | --- | --- |
+| Origem da constante Fator-K (0.347215) desconhecida (MYS-003) | Média | Alto | Parametrizar; validar valores por equivalência contra o legado |
+| Remover backdoors (CPF 000, região 99, prefixos) pode quebrar fluxos de teste | Média | Médio | Substituir por feature flags explícitas e auditadas (ADR-003) |
+| Migração de 180 mi+ registros sem expurgo | Alta | Alto | Expand-contract por competência (ADR-002) |
+| Divergência TRUNCATE × ROUND entre cálculo e relatório (MYS-005) | Média | Médio | Política única de truncamento (REQ-PAY-003) |
 
 ## Aprovação
 
 - [ ] Par 1 (Product Owner) aprovou as decisões de escopo
-- [ ] Par 2 (Enterprise Architect) validou a viabilidade técnica
+- [x] Par 2 (Enterprise Architect) validou a viabilidade técnica
 - [ ] Par 3 (Technical Lead) confirmou que cabe nas 3 horas do Estágio 3
 - [ ] Time concordou com as prioridades
 
